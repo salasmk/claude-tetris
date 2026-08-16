@@ -23,25 +23,36 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
-          # Restrict Claude to only the gh CLI operations needed to label and comment
-          claude_args: '--allowedTools "Bash(gh issue edit:*),Bash(gh issue comment:*),Bash(gh label create:*),Bash(gh label list:*)"'
+          # Restrict Claude to only the gh CLI operations needed to read, label and comment
+          claude_args: '--allowedTools "Bash(gh issue view:*),Bash(gh issue edit:*),Bash(gh issue comment:*),Bash(gh label create:*),Bash(gh label list:*)"'
 
           prompt: |
-            Analyze issue #${{ github.event.issue.number }} in this repository (title and body) and do the following:
+            Analyze the following GitHub issue in this repository and do the following:
 
-            1. Assign appropriate labels using `gh issue edit ${{ github.event.issue.number }} --add-label "..."`.
-               Choose from this standard set, creating any that don't yet exist in the repo with
-               `gh label create` before applying them:
+            Issue #${{ github.event.issue.number }}: ${{ github.event.issue.title }}
+
+            ${{ github.event.issue.body }}
+
+            (If you need more context, you can also fetch the latest version with
+            `gh issue view ${{ github.event.issue.number }}`.)
+
+            1. Assign labels using `gh issue edit ${{ github.event.issue.number }} --add-label "..."`
+               that specifically match what THIS issue is asking for — base the choice on the actual
+               title and body above, not a generic default set. Choose from this standard set, creating
+               any that don't yet exist in the repo with `gh label create` before applying them:
                - Type: bug, enhancement, question, documentation, duplicate, wontfix
                - Area (this is a vanilla JS Tetris game in game.js): rendering, input, collision, scoring, performance
-               Only apply labels that are actually relevant; don't apply every label.
+               Apply only the labels that genuinely match this issue's content; don't apply every label,
+               and don't apply a label just because it exists in the standard set.
 
-            2. Post a general diagnosis as a comment on the issue using
-               `gh issue comment ${{ github.event.issue.number }} --body "..."`. The diagnosis should cover:
-               - Likely root cause of the problem (or, for feature requests, what the request implies)
+            2. Post a comment on the issue using `gh issue comment ${{ github.event.issue.number }} --body "..."`
+               that directly analyzes what THIS issue is requesting (quote or paraphrase the specific
+               ask from the title/body — do not give a generic template response). The comment should cover:
+               - What is being requested, and the likely root cause of the problem (or, for feature
+                 requests, what implementing the request implies)
                - Which parts of game.js are likely involved (e.g. collide, loop, lockPiece, tryRotate,
                  draw, drawNext, input handling), referencing the architecture described in CLAUDE.md
-               - A suggested approach for the fix or implementation
+               - A suggested approach for the fix or implementation, specific to this request
 
                Do not write or modify any code — this is diagnosis only, to prepare for a future
                implementation step.
