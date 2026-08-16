@@ -29,6 +29,9 @@ const PIECES = [
 ];
 
 const LINE_SCORES = [0, 100, 300, 500, 800];
+const TSPIN_SCORES = [0, 400, 800, 1200]; // T-spin single/double/triple (T can never clear 4)
+const PERFECT_CLEAR_BONUS = 2000;
+const B2B_MULTIPLIER = 1.5;
 
 const WILDCARD = -1;
 const POWERUP_INTERVAL = 5; // lines between power-up spawns
@@ -48,6 +51,7 @@ const nextCtx = nextCanvas.getContext('2d');
 const scoreEl = document.getElementById('score');
 const linesEl = document.getElementById('lines');
 const levelEl = document.getElementById('level');
+const comboEl = document.getElementById('combo');
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
@@ -56,6 +60,7 @@ const themeToggle = document.getElementById('theme-toggle');
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
 let pendingPowerUp, nextPowerUpAt, frozenUntil;
+let combo, backToBackTetris, lastAction, comboEffect, audioCtx;
 
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -126,9 +131,29 @@ function tryRotate() {
     if (!collide(rotated, current.x + kick, current.y)) {
       current.shape = rotated;
       current.x += kick;
+      lastAction = 'rotate';
       return;
     }
   }
+}
+
+// Standard 3-corner rule: a T-spin requires the last action to be a rotation
+// and at least 3 of the 4 corners of the piece's 3x3 box to be occupied.
+// Reuses collide() (via a 1x1 probe) as the single source of truth for occupancy.
+function isTSpin() {
+  if (current.special || current.type !== 3 || lastAction !== 'rotate') return false;
+  const { x, y } = current;
+  const corners = [
+    collide([[1]], x, y),
+    collide([[1]], x + 2, y),
+    collide([[1]], x, y + 2),
+    collide([[1]], x + 2, y + 2),
+  ];
+  return corners.filter(Boolean).length >= 3;
+}
+
+function isBoardEmpty() {
+  return board.every(row => row.every(v => v === 0));
 }
 
 function merge() {
@@ -138,20 +163,55 @@ function merge() {
         board[current.y + r][current.x + c] = current.shape[r][c];
 }
 
-function addLinesCleared(count) {
-  if (!count) return;
+// Power-up-triggered clears (e.g. lightning) pass trackCombo:false — they're a
+// separate mechanic and shouldn't build or break the player's natural combo streak.
+function addLinesCleared(count, opts = {}) {
+  const { isTSpin = false, trackCombo = true } = opts;
+  if (!count) {
+    if (trackCombo && combo !== 0) {
+      combo = 0;
+      updateHUD();
+    }
+    return;
+  }
+
   lines += count;
-  score += (LINE_SCORES[count] || 0) * level;
+  const isTetris = count === 4;
+
+  if (trackCombo) combo++;
+  const comboMultiplier = trackCombo ? combo : 1;
+
+  const base = (isTSpin ? TSPIN_SCORES[count] : LINE_SCORES[count]) || 0;
+  let lineScore = base * level * comboMultiplier;
+
+  let isB2B = false;
+  if (trackCombo) {
+    if (isTetris && backToBackTetris) {
+      isB2B = true;
+      lineScore = Math.round(lineScore * B2B_MULTIPLIER);
+    }
+    backToBackTetris = isTetris;
+  }
+  score += lineScore;
+
+  let perfectClear = false;
+  if (trackCombo && isBoardEmpty()) {
+    perfectClear = true;
+    score += PERFECT_CLEAR_BONUS * level;
+  }
+
   level = Math.floor(lines / 10) + 1;
   dropInterval = Math.max(100, 1000 - (level - 1) * 90);
   while (lines >= nextPowerUpAt) {
     pendingPowerUp = true;
     nextPowerUpAt += POWERUP_INTERVAL;
   }
+
+  if (trackCombo) triggerComboFeedback({ combo, isTSpin, isTetris, isB2B, perfectClear });
   updateHUD();
 }
 
-function clearLines() {
+function clearLines(opts = {}) {
   let cleared = 0;
   for (let r = ROWS - 1; r >= 0; r--) {
     if (board[r].every(v => v !== 0)) {
@@ -161,7 +221,7 @@ function clearLines() {
       r++;
     }
   }
-  addLinesCleared(cleared);
+  addLinesCleared(cleared, opts);
 }
 
 function ghostY() {
@@ -188,12 +248,15 @@ function softDrop() {
 }
 
 function lockPiece() {
+  const tspin = isTSpin();
   if (current.special) {
     applyPowerUp(current);
+    clearLines({ trackCombo: false });
   } else {
     merge();
+    clearLines({ isTSpin: tspin });
   }
-  clearLines();
+  lastAction = null;
   spawn();
 }
 
@@ -221,7 +284,7 @@ function applyLightning(cx, cy) {
   if (cy >= 0 && cy < ROWS) {
     board.splice(cy, 1);
     board.unshift(new Array(COLS).fill(0));
-    addLinesCleared(1);
+    addLinesCleared(1, { trackCombo: false });
   }
   if (cx >= 0 && cx < COLS) {
     for (let r = 0; r < ROWS; r++) board[r][cx] = 0;
@@ -273,6 +336,67 @@ function updateHUD() {
   scoreEl.textContent = score.toLocaleString();
   linesEl.textContent = lines;
   levelEl.textContent = level;
+  comboEl.textContent = combo >= 2 ? `x${combo}` : '-';
+}
+
+function getAudioCtx() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  if (!audioCtx) audioCtx = new AC();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function beep(freq, duration, delay = 0, type = 'square', peakGain = 0.08) {
+  const ac = getAudioCtx();
+  if (!ac) return;
+  const osc = ac.createOscillator();
+  const gain = ac.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  osc.connect(gain);
+  gain.connect(ac.destination);
+  const startAt = ac.currentTime + delay;
+  gain.gain.setValueAtTime(peakGain, startAt);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+  osc.start(startAt);
+  osc.stop(startAt + duration);
+}
+
+function playComboSound({ combo, isTSpin, isTetris, isB2B, perfectClear }) {
+  if (perfectClear) {
+    [523, 659, 784, 1047].forEach((f, i) => beep(f, 0.18, i * 0.09, 'triangle', 0.1));
+    return;
+  }
+  if (isB2B) {
+    beep(880, 0.12, 0, 'sawtooth', 0.09);
+    beep(1108, 0.16, 0.1, 'sawtooth', 0.09);
+    return;
+  }
+  if (isTetris) {
+    beep(660, 0.14, 0, 'square', 0.09);
+    beep(880, 0.16, 0.1, 'square', 0.09);
+    return;
+  }
+  if (isTSpin) {
+    beep(740, 0.15, 0, 'sawtooth', 0.08);
+    return;
+  }
+  if (combo >= 2) {
+    beep(440 + Math.min(combo, 8) * 60, 0.1, 0, 'square', 0.07);
+  }
+}
+
+function triggerComboFeedback({ combo, isTSpin, isTetris, isB2B, perfectClear }) {
+  const lines = [];
+  if (isTSpin) lines.push('T-SPIN!');
+  if (isTetris) lines.push('TETRIS!');
+  if (isB2B) lines.push('BACK-TO-BACK!');
+  if (combo >= 2) lines.push(`COMBO x${combo}`);
+  if (perfectClear) lines.push('PERFECT CLEAR!');
+  if (!lines.length) return;
+  comboEffect = { lines, startedAt: performance.now(), duration: 1400 };
+  playComboSound({ combo, isTSpin, isTetris, isB2B, perfectClear });
 }
 
 function drawBlock(context, x, y, colorIndex, size, alpha) {
@@ -334,17 +458,47 @@ function draw() {
   if (current.special) {
     drawPowerUp(ctx, current.x, gy, current.special, BLOCK, 0.2);
     drawPowerUp(ctx, current.x, current.y, current.special, BLOCK);
+  } else {
+    for (let r = 0; r < current.shape.length; r++)
+      for (let c = 0; c < current.shape[r].length; c++)
+        if (current.shape[r][c])
+          drawBlock(ctx, current.x + c, gy + r, current.shape[r][c], BLOCK, 0.2);
+
+    // current piece
+    for (let r = 0; r < current.shape.length; r++)
+      for (let c = 0; c < current.shape[r].length; c++)
+        drawBlock(ctx, current.x + c, current.y + r, current.shape[r][c], BLOCK);
+  }
+
+  drawComboEffect();
+}
+
+function drawComboEffect() {
+  if (!comboEffect) return;
+  const elapsed = performance.now() - comboEffect.startedAt;
+  if (elapsed > comboEffect.duration) {
+    comboEffect = null;
     return;
   }
-  for (let r = 0; r < current.shape.length; r++)
-    for (let c = 0; c < current.shape[r].length; c++)
-      if (current.shape[r][c])
-        drawBlock(ctx, current.x + c, gy + r, current.shape[r][c], BLOCK, 0.2);
+  const progress = elapsed / comboEffect.duration;
+  const alpha = progress < 0.7 ? 1 : Math.max(0, 1 - (progress - 0.7) / 0.3);
 
-  // current piece
-  for (let r = 0; r < current.shape.length; r++)
-    for (let c = 0; c < current.shape[r].length; c++)
-      drawBlock(ctx, current.x + c, current.y + r, current.shape[r][c], BLOCK);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 22px sans-serif';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillStyle = '#ffd54f';
+  const lineHeight = 26;
+  const startY = canvas.height / 2 - ((comboEffect.lines.length - 1) * lineHeight) / 2;
+  comboEffect.lines.forEach((line, i) => {
+    const y = startY + i * lineHeight;
+    ctx.strokeText(line, canvas.width / 2, y);
+    ctx.fillText(line, canvas.width / 2, y);
+  });
+  ctx.restore();
 }
 
 function drawNext() {
@@ -415,6 +569,10 @@ function init() {
   pendingPowerUp = false;
   nextPowerUpAt = POWERUP_INTERVAL;
   frozenUntil = 0;
+  combo = 0;
+  backToBackTetris = false;
+  lastAction = null;
+  comboEffect = null;
   lastTime = performance.now();
   next = randomPiece();
   spawn();
@@ -429,10 +587,10 @@ document.addEventListener('keydown', e => {
   if (paused || gameOver) return;
   switch (e.code) {
     case 'ArrowLeft':
-      if (!collide(current.shape, current.x - 1, current.y)) current.x--;
+      if (!collide(current.shape, current.x - 1, current.y)) { current.x--; lastAction = 'move'; }
       break;
     case 'ArrowRight':
-      if (!collide(current.shape, current.x + 1, current.y)) current.x++;
+      if (!collide(current.shape, current.x + 1, current.y)) { current.x++; lastAction = 'move'; }
       break;
     case 'ArrowDown':
       softDrop();
