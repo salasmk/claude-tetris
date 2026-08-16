@@ -415,8 +415,19 @@ kbd {
   overflow-y: auto;
 }
 
-.leaderboard-row {
+.leaderboard-row,
+.leaderboard-row:hover {
   cursor: default;
+  background: var(--kbd-bg);
+  border-color: var(--kbd-border);
+}
+
+.leaderboard-row:hover .mode-name {
+  color: var(--value-color);
+}
+
+.leaderboard-row:hover .mode-desc {
+  color: var(--control-color);
 }
 
 .leaderboard-row.leaderboard-highlight {
