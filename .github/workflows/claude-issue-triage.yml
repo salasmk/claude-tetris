@@ -45,3 +45,6 @@ jobs:
 
                Do not write or modify any code — this is diagnosis only, to prepare for a future
                implementation step.
+
+               Format the comment body in Markdown that GitHub can render properly (headings,
+               bullet lists, and fenced code blocks with language hints for any code references).
