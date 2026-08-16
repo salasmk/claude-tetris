@@ -94,6 +94,45 @@
       </div>
     </div>
 
+    <div id="pause-overlay" class="overlay hidden">
+      <div class="overlay-box menu-box">
+        <p class="menu-title">PAUSA</p>
+        <div class="mode-list">
+          <button id="resume-btn" class="secondary-btn">Reanudar</button>
+          <button id="pause-restart-btn" class="secondary-btn">Reiniciar</button>
+          <button id="toggle-controls-btn" class="secondary-btn">Ver controles</button>
+        </div>
+        <div class="panel-section controls" id="pause-controls" hidden>
+          <span class="label">CONTROLS</span>
+          <ul>
+            <li><kbd>←</kbd><kbd>→</kbd> mover</li>
+            <li><kbd>↑</kbd> rotar</li>
+            <li><kbd>↓</kbd> bajar</li>
+            <li><kbd>Space</kbd> caída</li>
+            <li><kbd>Shift</kbd> reservar</li>
+            <li><kbd>P</kbd> pausa</li>
+            <li><kbd>C</kbd> habilidad</li>
+          </ul>
+        </div>
+        <div class="panel-section">
+          <span class="label">NIVEL INICIAL</span>
+          <select id="starting-level-select">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+            <option value="9">9</option>
+            <option value="10">10</option>
+          </select>
+        </div>
+        <button id="pause-menu-btn" class="secondary-btn">Elegir modo</button>
+      </div>
+    </div>
+
     <div id="skill-overlay" class="overlay hidden">
       <div class="overlay-box menu-box">
         <p class="menu-title">ELIGE UNA HABILIDAD</p>

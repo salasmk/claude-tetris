@@ -87,12 +87,20 @@ const themeToggle = document.getElementById('theme-toggle');
 const skillOverlay = document.getElementById('skill-overlay');
 const skillButtons = document.querySelectorAll('.skill-btn');
 const skillCancelBtn = document.getElementById('skill-cancel-btn');
+const pauseOverlay = document.getElementById('pause-overlay');
+const resumeBtn = document.getElementById('resume-btn');
+const pauseRestartBtn = document.getElementById('pause-restart-btn');
+const toggleControlsBtn = document.getElementById('toggle-controls-btn');
+const pauseControls = document.getElementById('pause-controls');
+const startingLevelSelect = document.getElementById('starting-level-select');
+const pauseMenuBtn = document.getElementById('pause-menu-btn');
 
 let board, current, nextQueue, score, lines, level, paused, gameOver, gameStarted, lastTime, dropAccum, dropInterval, animId;
 let pendingPowerUp, nextPowerUpAt, frozenUntil;
 let combo, backToBackTetris, lastAction, comboEffect, audioCtx;
 let challenge, currentChallengeId;
 let skillEnergy, choosingSkill, holdPiece, holdUsed, peekUntil, slowUntil, lastLockSnapshot;
+let startingLevel;
 
 // Challenge definitions: each entry describes a win condition (`goal`),
 // an optional overall countdown (`timeLimitMs`), and rule modifiers applied
@@ -147,6 +155,17 @@ function initTheme() {
   applyTheme(saved === 'light' ? 'light' : 'dark');
 }
 
+function setStartingLevel(lvl) {
+  startingLevel = lvl;
+  localStorage.setItem('tetris-starting-level', String(lvl));
+  if (startingLevelSelect) startingLevelSelect.value = String(lvl);
+}
+
+function initStartingLevel() {
+  const saved = parseInt(localStorage.getItem('tetris-starting-level'), 10);
+  setStartingLevel(Number.isInteger(saved) && saved >= 1 && saved <= 10 ? saved : 1);
+}
+
 function gridColor() {
   return getComputedStyle(document.documentElement).getPropertyValue('--grid-color').trim();
 }
@@ -156,6 +175,7 @@ themeToggle.addEventListener('change', () => {
 });
 
 initTheme();
+initStartingLevel();
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -232,7 +252,11 @@ function rotateCCW(shape) {
 }
 
 function tryRotate() {
-  const reverse = challenge && challenge.modifiers.reverseAtLevel && level >= challenge.modifiers.reverseAtLevel;
+  // Compare progress relative to the chosen starting level so the "Nivel inicial"
+  // selector doesn't make this challenge start reversed instead of ramping up
+  // after the same number of lines it always has.
+  const reverse = challenge && challenge.modifiers.reverseAtLevel &&
+    (level - startingLevel + 1) >= challenge.modifiers.reverseAtLevel;
   const rotated = reverse ? rotateCCW(current.shape) : rotateCW(current.shape);
   const kicks = [0, -1, 1, -2, 2];
   for (const kick of kicks) {
@@ -309,7 +333,7 @@ function addLinesCleared(count, opts = {}) {
     score += PERFECT_CLEAR_BONUS * level;
   }
 
-  level = Math.floor(lines / 10) + 1;
+  level = startingLevel + Math.floor(lines / 10);
   dropInterval = Math.max(100, 1000 - (level - 1) * 90);
   while (lines >= nextPowerUpAt) {
     pendingPowerUp = true;
@@ -828,16 +852,16 @@ function endGame() {
 }
 
 function togglePause() {
-  if (gameOver) return;
+  if (gameOver || choosingSkill) return;
   paused = !paused;
   if (!paused) {
+    pauseOverlay.classList.add('hidden');
     lastTime = performance.now();
     loop(lastTime);
   } else {
     cancelAnimationFrame(animId);
-    overlayTitle.textContent = 'PAUSA';
-    overlayScore.textContent = '';
-    overlay.classList.remove('hidden');
+    pauseControls.hidden = true;
+    pauseOverlay.classList.remove('hidden');
   }
 }
 
@@ -969,11 +993,11 @@ function init() {
   if (challenge && challenge.modifiers.prefilledBlocks) seedFixedBlocks(board);
   score = 0;
   lines = 0;
-  level = 1;
+  level = startingLevel;
   paused = false;
   gameOver = false;
   gameStarted = true;
-  dropInterval = 1000;
+  dropInterval = Math.max(100, 1000 - (startingLevel - 1) * 90);
   dropAccum = 0;
   pendingPowerUp = false;
   nextPowerUpAt = POWERUP_INTERVAL;
@@ -1000,6 +1024,7 @@ function init() {
   overlay.classList.add('hidden');
   menuOverlay.classList.add('hidden');
   skillOverlay.classList.add('hidden');
+  pauseOverlay.classList.add('hidden');
   cancelAnimationFrame(animId);
   animId = requestAnimationFrame(loop);
 }
@@ -1007,7 +1032,9 @@ function init() {
 function showMenu() {
   cancelAnimationFrame(animId);
   gameOver = true;
+  paused = false;
   overlay.classList.add('hidden');
+  pauseOverlay.classList.add('hidden');
   menuOverlay.classList.remove('hidden');
 }
 
@@ -1028,7 +1055,7 @@ document.addEventListener('keydown', e => {
     }
     return;
   }
-  if (e.code === 'KeyP') { togglePause(); return; }
+  if (e.code === 'KeyP' || e.code === 'Escape') { togglePause(); return; }
   if (paused || gameOver) return;
   if (e.code === 'KeyC') { openSkillSelection(); return; }
   switch (e.code) {
@@ -1069,3 +1096,20 @@ skillCancelBtn.addEventListener('click', cancelSkillSelection);
 
 restartBtn.addEventListener('click', () => startGame(currentChallengeId));
 menuBtn.addEventListener('click', showMenu);
+
+resumeBtn.addEventListener('click', () => togglePause());
+pauseRestartBtn.addEventListener('click', () => {
+  // Reset pause state directly (not via togglePause) so we don't resume the
+  // old game for one real tick — which could lock the current piece and fire
+  // clear/combo side effects — right before startGame() overwrites it all.
+  paused = false;
+  pauseOverlay.classList.add('hidden');
+  startGame(currentChallengeId);
+});
+toggleControlsBtn.addEventListener('click', () => {
+  pauseControls.hidden = !pauseControls.hidden;
+});
+startingLevelSelect.addEventListener('change', () => {
+  setStartingLevel(parseInt(startingLevelSelect.value, 10));
+});
+pauseMenuBtn.addEventListener('click', showMenu);
