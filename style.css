@@ -81,6 +81,18 @@ body {
   margin-bottom: 0;
 }
 
+/* ---- Skin selector ---- */
+#skin-select {
+  background: var(--kbd-bg);
+  border: 1px solid var(--kbd-border);
+  color: var(--kbd-color);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
 /* ---- Theme toggle ---- */
 .theme-toggle {
   display: inline-flex;

@@ -4,17 +4,40 @@ const COLS = 10;
 const ROWS = 20;
 const BLOCK = 30;
 
-const COLORS = [
-  null,
-  '#4dd0e1', // I - cyan
-  '#ffd54f', // O - yellow
-  '#ba68c8', // T - purple
-  '#81c784', // S - green
-  '#e57373', // Z - red
-  '#90caf9', // J - pale blue
-  '#ffb74d', // L - orange
-  '#b0bec5', // Nut - metallic gray
-];
+const SKINS = {
+  classic: {
+    colors: [null, '#4dd0e1', '#ffd54f', '#ba68c8', '#81c784', '#e57373', '#90caf9', '#ffb74d', '#b0bec5'],
+    glow: false,
+    rounded: false,
+    texture: null,
+  },
+  retro: {
+    colors: [null, '#00bcd4', '#ffeb3b', '#9c27b0', '#4caf50', '#f44336', '#2196f3', '#ff9800', '#9e9e9e'],
+    glow: false,
+    rounded: false,
+    texture: null,
+  },
+  neon: {
+    colors: [null, '#00fff2', '#faff00', '#e100ff', '#00ff5e', '#ff003c', '#00aaff', '#ff8800', '#e0e0e0'],
+    glow: true,
+    rounded: false,
+    texture: null,
+  },
+  pastel: {
+    colors: [null, '#b8e8ec', '#fff2c2', '#e3c2ec', '#c9e8c6', '#f3c6c6', '#c6dcf3', '#f5d9b8', '#d9d9df'],
+    glow: false,
+    rounded: true,
+    texture: null,
+  },
+  pixel: {
+    colors: [null, '#4dd0e1', '#ffd54f', '#ba68c8', '#81c784', '#e57373', '#90caf9', '#ffb74d', '#b0bec5'],
+    glow: false,
+    rounded: false,
+    texture: 'checker',
+  },
+};
+let currentSkin = 'classic';
+const NUM_COLORS = SKINS.classic.colors.length;
 
 const PIECES = [
   null,
@@ -84,6 +107,7 @@ const challengePanel = document.getElementById('challenge-panel');
 const challengeGoalEl = document.getElementById('challenge-goal');
 const challengeTimeEl = document.getElementById('challenge-time');
 const themeToggle = document.getElementById('theme-toggle');
+const skinSelect = document.getElementById('skin-select');
 const skillOverlay = document.getElementById('skill-overlay');
 const skillButtons = document.querySelectorAll('.skill-btn');
 const skillCancelBtn = document.getElementById('skill-cancel-btn');
@@ -147,6 +171,23 @@ function initTheme() {
   applyTheme(saved === 'light' ? 'light' : 'dark');
 }
 
+function applySkin(name) {
+  currentSkin = SKINS[name] ? name : 'classic';
+  if (skinSelect) skinSelect.value = currentSkin;
+  localStorage.setItem('tetris-skin', currentSkin);
+}
+
+function initSkin() {
+  const saved = localStorage.getItem('tetris-skin');
+  applySkin(saved || 'classic');
+}
+
+if (skinSelect) {
+  skinSelect.addEventListener('change', () => {
+    applySkin(skinSelect.value);
+  });
+}
+
 function gridColor() {
   return getComputedStyle(document.documentElement).getPropertyValue('--grid-color').trim();
 }
@@ -156,6 +197,7 @@ themeToggle.addEventListener('change', () => {
 });
 
 initTheme();
+initSkin();
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -446,7 +488,7 @@ function applyLightning(cx, cy) {
 }
 
 function applyTint() {
-  const counts = new Array(COLORS.length).fill(0);
+  const counts = new Array(NUM_COLORS).fill(0);
   for (let r = 0; r < ROWS; r++)
     for (let c = 0; c < COLS; c++)
       if (board[r][c] > 0) counts[board[r][c]]++;
@@ -654,16 +696,56 @@ function triggerComboFeedback({ combo, isTSpin, isTetris, isB2B, perfectClear })
 
 function drawBlock(context, x, y, colorIndex, size, alpha) {
   if (!colorIndex) return;
+  const skin = SKINS[currentSkin];
   const color = colorIndex === WILDCARD
     ? `hsl(${(performance.now() / 8) % 360}, 80%, 65%)`
-    : COLORS[colorIndex];
+    : skin.colors[colorIndex];
+
+  const bx = x * size + 1;
+  const by = y * size + 1;
+  const bw = size - 2;
+  const bh = size - 2;
+
+  context.save();
   context.globalAlpha = alpha ?? 1;
   context.fillStyle = color;
-  context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
+
+  if (skin.glow) {
+    context.shadowBlur = 12;
+    context.shadowColor = color;
+  }
+
+  if (skin.rounded) {
+    if (typeof context.roundRect === 'function') {
+      context.beginPath();
+      context.roundRect(bx, by, bw, bh, 5);
+      context.fill();
+    } else {
+      context.fillRect(bx, by, bw, bh);
+    }
+  } else {
+    context.fillRect(bx, by, bw, bh);
+  }
+
+  // clear shadow before drawing highlight/texture overlays so they don't glow too
+  context.shadowBlur = 0;
+
+  if (skin.texture === 'checker') {
+    const cell = Math.max(2, Math.floor(size / 6));
+    context.fillStyle = 'rgba(0,0,0,0.12)';
+    for (let ty = 0; ty < bh; ty += cell * 2) {
+      for (let tx = 0; tx < bw; tx += cell * 2) {
+        context.fillRect(bx + tx, by + ty, cell, cell);
+        context.fillRect(bx + tx + cell, by + ty + cell, cell, cell);
+      }
+    }
+  }
+
   // highlight
   context.fillStyle = 'rgba(255,255,255,0.12)';
-  context.fillRect(x * size + 1, y * size + 1, size - 2, 4);
-  context.globalAlpha = 1;
+  context.fillRect(bx, by, bw, 4);
+
+  context.restore();
 }
 
 function drawPowerUp(context, x, y, special, size, alpha) {
