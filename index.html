@@ -40,6 +40,13 @@
           <span class="value" id="combo">-</span>
         </div>
 
+        <div class="panel-section" id="challenge-panel" hidden>
+          <span class="label">OBJETIVO</span>
+          <span class="value small" id="challenge-goal">-</span>
+          <span class="label">TIEMPO</span>
+          <span class="value small" id="challenge-time">-</span>
+        </div>
+
         <div class="panel-section">
           <span class="label">NEXT</span>
           <canvas id="next-canvas" width="120" height="120"></canvas>
@@ -63,6 +70,39 @@
         <p id="overlay-title">GAME OVER</p>
         <p id="overlay-score"></p>
         <button id="restart-btn">Reiniciar</button>
+        <button id="menu-btn" class="secondary-btn">Elegir modo</button>
+      </div>
+    </div>
+
+    <div id="menu-overlay" class="overlay">
+      <div class="overlay-box menu-box">
+        <p class="menu-title">MODO DE JUEGO</p>
+        <div class="mode-list">
+          <button class="mode-btn" data-challenge="">
+            <span class="mode-name">Modo libre</span>
+            <span class="mode-desc">Juega sin objetivos, solo puntuación</span>
+          </button>
+          <button class="mode-btn" data-challenge="lines40">
+            <span class="mode-name">Contrarreloj</span>
+            <span class="mode-desc">Limpia 40 líneas en 2 minutos</span>
+          </button>
+          <button class="mode-btn" data-challenge="garbage">
+            <span class="mode-name">Supervivencia</span>
+            <span class="mode-desc">Sobrevive con basura subiendo cada 10s</span>
+          </button>
+          <button class="mode-btn" data-challenge="fixed">
+            <span class="mode-name">Bloques fijos</span>
+            <span class="mode-desc">Tablero con obstáculos pre-colocados</span>
+          </button>
+          <button class="mode-btn" data-challenge="invisible">
+            <span class="mode-name">Piezas invisibles</span>
+            <span class="mode-desc">Las piezas desaparecen al tocar el suelo</span>
+          </button>
+          <button class="mode-btn" data-challenge="reverse">
+            <span class="mode-name">Rotación inversa</span>
+            <span class="mode-desc">Limpia 30 líneas; la rotación se invierte desde el nivel 2</span>
+          </button>
+        </div>
       </div>
     </div>
   </div>
