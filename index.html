@@ -89,6 +89,14 @@
       <div class="overlay-box">
         <p id="overlay-title">GAME OVER</p>
         <p id="overlay-score"></p>
+        <div id="save-score-block" class="save-score-block hidden">
+          <input type="text" id="player-name-input" maxlength="12" placeholder="Tu nombre" />
+          <button id="save-score-btn">Guardar</button>
+        </div>
+        <div id="overlay-leaderboard-section" class="leaderboard-section hidden">
+          <p class="leaderboard-title">TOP 5</p>
+          <div id="overlay-leaderboard" class="mode-list leaderboard-list"></div>
+        </div>
         <button id="restart-btn">Reiniciar</button>
         <button id="menu-btn" class="secondary-btn">Elegir modo</button>
       </div>
@@ -147,6 +155,12 @@
             <span class="mode-name">Rotación inversa</span>
             <span class="mode-desc">Limpia 30 líneas; la rotación se invierte desde el nivel 2</span>
           </button>
+        </div>
+        <div class="leaderboard-section">
+          <p class="leaderboard-title">TOP 5</p>
+          <div id="menu-leaderboard" class="mode-list leaderboard-list"></div>
+          <p id="leaderboard-stats" class="value small"></p>
+          <button id="reset-leaderboard-btn" class="secondary-btn">Reiniciar récords</button>
         </div>
       </div>
     </div>

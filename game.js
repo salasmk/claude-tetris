@@ -87,10 +87,18 @@ const themeToggle = document.getElementById('theme-toggle');
 const skillOverlay = document.getElementById('skill-overlay');
 const skillButtons = document.querySelectorAll('.skill-btn');
 const skillCancelBtn = document.getElementById('skill-cancel-btn');
+const saveScoreBlock = document.getElementById('save-score-block');
+const playerNameInput = document.getElementById('player-name-input');
+const saveScoreBtn = document.getElementById('save-score-btn');
+const overlayLeaderboardEl = document.getElementById('overlay-leaderboard');
+const overlayLeaderboardSectionEl = document.getElementById('overlay-leaderboard-section');
+const menuLeaderboardEl = document.getElementById('menu-leaderboard');
+const leaderboardStatsEl = document.getElementById('leaderboard-stats');
+const resetLeaderboardBtn = document.getElementById('reset-leaderboard-btn');
 
 let board, current, nextQueue, score, lines, level, paused, gameOver, gameStarted, lastTime, dropAccum, dropInterval, animId;
 let pendingPowerUp, nextPowerUpAt, frozenUntil;
-let combo, backToBackTetris, lastAction, comboEffect, audioCtx;
+let combo, backToBackTetris, lastAction, comboEffect, audioCtx, maxCombo;
 let challenge, currentChallengeId;
 let skillEnergy, choosingSkill, holdPiece, holdUsed, peekUntil, slowUntil, lastLockSnapshot;
 
@@ -156,6 +164,142 @@ themeToggle.addEventListener('change', () => {
 });
 
 initTheme();
+
+const LEADERBOARD_KEY = 'tetris-leaderboard';
+const LEADERBOARD_MAX = 5;
+
+// First JSON-shaped localStorage key in the codebase (tetris-theme is a raw
+// string) — wrapped in try/catch so missing/corrupt data degrades to [].
+function loadLeaderboard() {
+  try {
+    const raw = localStorage.getItem(LEADERBOARD_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLeaderboard(entries) {
+  try {
+    localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(entries));
+  } catch {
+    // Storage unavailable/full (e.g. Safari private mode) — fail silently,
+    // mirroring loadLeaderboard()'s defensive handling.
+  }
+}
+
+function qualifiesForLeaderboard(scoreValue) {
+  const entries = loadLeaderboard();
+  if (entries.length < LEADERBOARD_MAX) return true;
+  const lowest = entries[entries.length - 1];
+  return scoreValue > lowest.score;
+}
+
+// Shared renderer for both #menu-overlay and #overlay leaderboard displays.
+// Builds DOM nodes via textContent (never innerHTML) since entry.name comes
+// from unsanitized player input.
+function renderLeaderboard(containerEl, highlightEntry) {
+  if (!containerEl) return;
+  const entries = loadLeaderboard();
+  containerEl.innerHTML = '';
+  if (!entries.length) {
+    const empty = document.createElement('p');
+    empty.className = 'mode-desc';
+    empty.textContent = 'Sin puntuaciones todavía';
+    containerEl.appendChild(empty);
+    return;
+  }
+  entries.forEach((entry, i) => {
+    const row = document.createElement('div');
+    row.className = 'mode-btn leaderboard-row';
+    if (highlightEntry && entry.date === highlightEntry.date && entry.score === highlightEntry.score) {
+      row.classList.add('leaderboard-highlight');
+    }
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'mode-name';
+    nameEl.textContent = `${i + 1}. ${entry.name} — ${entry.score.toLocaleString()}`;
+
+    const descEl = document.createElement('span');
+    descEl.className = 'mode-desc';
+    const dateStr = entry.date ? new Date(entry.date).toLocaleDateString() : '';
+    descEl.textContent = `Líneas: ${entry.lines} · Nivel: ${entry.level} · Combo: x${entry.maxCombo}${dateStr ? ' · ' + dateStr : ''}`;
+
+    row.appendChild(nameEl);
+    row.appendChild(descEl);
+    containerEl.appendChild(row);
+  });
+}
+
+// No separate all-time counters — derived via Math.max over the stored
+// array itself, so it stays automatically consistent with resets.
+function deriveLeaderboardStats(entries) {
+  if (!entries.length) return { bestCombo: 0, bestLines: 0 };
+  return {
+    bestCombo: Math.max(...entries.map(e => e.maxCombo || 0)),
+    bestLines: Math.max(...entries.map(e => e.lines || 0)),
+  };
+}
+
+function updateLeaderboardStatsUI() {
+  if (!leaderboardStatsEl) return;
+  const stats = deriveLeaderboardStats(loadLeaderboard());
+  leaderboardStatsEl.textContent = `Mejor combo: x${stats.bestCombo} · Máx. líneas: ${stats.bestLines}`;
+}
+
+function renderAllLeaderboards(highlightEntry) {
+  renderLeaderboard(menuLeaderboardEl, highlightEntry);
+  renderLeaderboard(overlayLeaderboardEl, highlightEntry);
+  updateLeaderboardStatsUI();
+}
+
+// Shows an inline name input + "Guardar" button inside #overlay when the
+// just-finished run's score qualifies for the top 5. Called from all three
+// end-of-run exit points (endGame/challengeSucceed/challengeFail).
+function maybeSaveScore() {
+  const qualifies = qualifiesForLeaderboard(score);
+  if (playerNameInput) playerNameInput.value = '';
+  saveScoreBlock.classList.toggle('hidden', !qualifies);
+  overlayLeaderboardSectionEl.classList.remove('hidden');
+  renderLeaderboard(overlayLeaderboardEl, null);
+  if (!qualifies) return;
+
+  saveScoreBtn.onclick = () => {
+    const name = playerNameInput.value.trim() || 'Jugador';
+    const entry = {
+      name,
+      score,
+      lines,
+      level,
+      maxCombo,
+      date: new Date().toISOString(),
+      challengeId: currentChallengeId,
+    };
+    const entries = loadLeaderboard();
+    entries.push(entry);
+    entries.sort((a, b) => b.score - a.score);
+    entries.length = Math.min(entries.length, LEADERBOARD_MAX);
+    saveLeaderboard(entries);
+    saveScoreBlock.classList.add('hidden');
+    renderAllLeaderboards(entry);
+  };
+}
+
+function resetLeaderboard() {
+  try {
+    localStorage.removeItem(LEADERBOARD_KEY);
+  } catch {
+    // Storage unavailable — nothing to clear.
+  }
+  renderAllLeaderboards(null);
+}
+
+if (resetLeaderboardBtn) resetLeaderboardBtn.addEventListener('click', resetLeaderboard);
+
+renderLeaderboard(menuLeaderboardEl, null);
+updateLeaderboardStatsUI();
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -287,6 +431,7 @@ function addLinesCleared(count, opts = {}) {
   const isTetris = count === 4;
 
   if (trackCombo) combo++;
+  if (trackCombo) maxCombo = Math.max(maxCombo, combo);
   const comboMultiplier = trackCombo ? combo : 1;
 
   const base = (isTSpin ? TSPIN_SCORES[count] : LINE_SCORES[count]) || 0;
@@ -560,6 +705,7 @@ function challengeSucceed() {
   cancelAnimationFrame(animId);
   overlayTitle.textContent = '¡DESAFÍO SUPERADO!';
   overlayScore.textContent = `Puntuación: ${score.toLocaleString()}`;
+  maybeSaveScore();
   overlay.classList.remove('hidden');
 }
 
@@ -568,6 +714,7 @@ function challengeFail(reason) {
   cancelAnimationFrame(animId);
   overlayTitle.textContent = 'DESAFÍO FALLIDO';
   overlayScore.textContent = reason || `Puntuación: ${score.toLocaleString()}`;
+  maybeSaveScore();
   overlay.classList.remove('hidden');
 }
 
@@ -824,6 +971,7 @@ function endGame() {
   cancelAnimationFrame(animId);
   overlayTitle.textContent = challenge ? 'DESAFÍO FALLIDO' : 'GAME OVER';
   overlayScore.textContent = `Puntuación: ${score.toLocaleString()}`;
+  maybeSaveScore();
   overlay.classList.remove('hidden');
 }
 
@@ -837,6 +985,8 @@ function togglePause() {
     cancelAnimationFrame(animId);
     overlayTitle.textContent = 'PAUSA';
     overlayScore.textContent = '';
+    saveScoreBlock.classList.add('hidden');
+    overlayLeaderboardSectionEl.classList.add('hidden');
     overlay.classList.remove('hidden');
   }
 }
@@ -979,6 +1129,7 @@ function init() {
   nextPowerUpAt = POWERUP_INTERVAL;
   frozenUntil = 0;
   combo = 0;
+  maxCombo = 0;
   backToBackTetris = false;
   lastAction = null;
   comboEffect = null;
@@ -1000,6 +1151,8 @@ function init() {
   overlay.classList.add('hidden');
   menuOverlay.classList.add('hidden');
   skillOverlay.classList.add('hidden');
+  saveScoreBlock.classList.add('hidden');
+  overlayLeaderboardSectionEl.classList.add('hidden');
   cancelAnimationFrame(animId);
   animId = requestAnimationFrame(loop);
 }

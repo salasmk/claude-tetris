@@ -387,3 +387,86 @@ kbd {
   font-size: 11px;
   color: var(--control-color);
 }
+
+/* ---- Tabla de records ---- */
+.leaderboard-section.hidden {
+  display: none;
+}
+
+.leaderboard-section {
+  width: 100%;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.leaderboard-title {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--title-color);
+}
+
+.leaderboard-list {
+  width: 100%;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.leaderboard-row {
+  cursor: default;
+}
+
+.leaderboard-row.leaderboard-highlight {
+  background: var(--btn-bg);
+  border-color: var(--btn-bg);
+}
+
+.leaderboard-row.leaderboard-highlight .mode-name,
+.leaderboard-row.leaderboard-highlight .mode-desc {
+  color: var(--btn-color);
+}
+
+#leaderboard-stats {
+  font-size: 12px;
+  text-align: center;
+}
+
+.save-score-block {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+}
+
+.save-score-block.hidden {
+  display: none;
+}
+
+.save-score-block input {
+  background: var(--kbd-bg);
+  border: 1px solid var(--kbd-border);
+  color: var(--kbd-color);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  width: 140px;
+}
+
+.save-score-block button {
+  background: var(--btn-bg);
+  color: var(--btn-color);
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.save-score-block button:hover {
+  background: var(--btn-bg-hover);
+}
