@@ -1,0 +1,47 @@
+name: Claude Issue Triage
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Issue Triage
+        id: claude-triage
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # Restrict Claude to only the gh CLI operations needed to label and comment
+          claude_args: '--allowedTools "Bash(gh issue edit:*),Bash(gh issue comment:*),Bash(gh label create:*),Bash(gh label list:*)"'
+
+          prompt: |
+            Analyze issue #${{ github.event.issue.number }} in this repository (title and body) and do the following:
+
+            1. Assign appropriate labels using `gh issue edit ${{ github.event.issue.number }} --add-label "..."`.
+               Choose from this standard set, creating any that don't yet exist in the repo with
+               `gh label create` before applying them:
+               - Type: bug, enhancement, question, documentation, duplicate, wontfix
+               - Area (this is a vanilla JS Tetris game in game.js): rendering, input, collision, scoring, performance
+               Only apply labels that are actually relevant; don't apply every label.
+
+            2. Post a general diagnosis as a comment on the issue using
+               `gh issue comment ${{ github.event.issue.number }} --body "..."`. The diagnosis should cover:
+               - Likely root cause of the problem (or, for feature requests, what the request implies)
+               - Which parts of game.js are likely involved (e.g. collide, loop, lockPiece, tryRotate,
+                 draw, drawNext, input handling), referencing the architecture described in CLAUDE.md
+               - A suggested approach for the fix or implementation
+
+               Do not write or modify any code — this is diagnosis only, to prepare for a future
+               implementation step.
