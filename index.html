@@ -94,6 +94,55 @@
       </div>
     </div>
 
+    <div id="pause-overlay" class="overlay hidden">
+      <div class="overlay-box menu-box">
+        <p class="menu-title">PAUSA</p>
+        <div class="mode-list">
+          <button id="resume-btn" class="mode-btn">
+            <span class="mode-name">Reanudar</span>
+            <span class="mode-desc">Vuelve al juego</span>
+          </button>
+          <button id="pause-restart-btn" class="mode-btn">
+            <span class="mode-name">Reiniciar</span>
+            <span class="mode-desc">Nueva partida sin recargar la página</span>
+          </button>
+          <button id="controls-toggle-btn" class="mode-btn">
+            <span class="mode-name">Ver controles</span>
+            <span class="mode-desc">Muestra la lista de teclas</span>
+          </button>
+        </div>
+        <ul id="pause-controls" class="pause-controls-list hidden">
+          <li><kbd>←</kbd><kbd>→</kbd> mover</li>
+          <li><kbd>↑</kbd> rotar</li>
+          <li><kbd>↓</kbd> bajar</li>
+          <li><kbd>Space</kbd> caída</li>
+          <li><kbd>Shift</kbd> reservar</li>
+          <li><kbd>P</kbd> / <kbd>Esc</kbd> pausa</li>
+          <li><kbd>C</kbd> habilidad</li>
+        </ul>
+        <div class="pause-level-select">
+          <label for="start-level-select" class="label">NIVEL INICIAL</label>
+          <select id="start-level-select">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+            <option value="9">9</option>
+            <option value="10">10</option>
+            <option value="11">11</option>
+            <option value="12">12</option>
+            <option value="13">13</option>
+            <option value="14">14</option>
+            <option value="15">15</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
     <div id="skill-overlay" class="overlay hidden">
       <div class="overlay-box menu-box">
         <p class="menu-title">ELIGE UNA HABILIDAD</p>

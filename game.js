@@ -87,12 +87,19 @@ const themeToggle = document.getElementById('theme-toggle');
 const skillOverlay = document.getElementById('skill-overlay');
 const skillButtons = document.querySelectorAll('.skill-btn');
 const skillCancelBtn = document.getElementById('skill-cancel-btn');
+const pauseOverlay = document.getElementById('pause-overlay');
+const resumeBtn = document.getElementById('resume-btn');
+const pauseRestartBtn = document.getElementById('pause-restart-btn');
+const controlsToggleBtn = document.getElementById('controls-toggle-btn');
+const pauseControls = document.getElementById('pause-controls');
+const startLevelSelect = document.getElementById('start-level-select');
 
 let board, current, nextQueue, score, lines, level, paused, gameOver, gameStarted, lastTime, dropAccum, dropInterval, animId;
 let pendingPowerUp, nextPowerUpAt, frozenUntil;
 let combo, backToBackTetris, lastAction, comboEffect, audioCtx;
 let challenge, currentChallengeId;
 let skillEnergy, choosingSkill, holdPiece, holdUsed, peekUntil, slowUntil, lastLockSnapshot;
+let startLevel = 1;
 
 // Challenge definitions: each entry describes a win condition (`goal`),
 // an optional overall countdown (`timeLimitMs`), and rule modifiers applied
@@ -156,6 +163,19 @@ themeToggle.addEventListener('change', () => {
 });
 
 initTheme();
+
+function initStartLevel() {
+  const saved = parseInt(localStorage.getItem('tetris-start-level'), 10);
+  startLevel = Number.isInteger(saved) && saved >= 1 && saved <= 15 ? saved : 1;
+  startLevelSelect.value = String(startLevel);
+}
+
+startLevelSelect.addEventListener('change', () => {
+  startLevel = parseInt(startLevelSelect.value, 10) || 1;
+  localStorage.setItem('tetris-start-level', String(startLevel));
+});
+
+initStartLevel();
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -828,16 +848,17 @@ function endGame() {
 }
 
 function togglePause() {
-  if (gameOver) return;
+  if (gameOver || choosingSkill) return;
   paused = !paused;
   if (!paused) {
+    pauseOverlay.classList.add('hidden');
     lastTime = performance.now();
     loop(lastTime);
   } else {
     cancelAnimationFrame(animId);
-    overlayTitle.textContent = 'PAUSA';
-    overlayScore.textContent = '';
-    overlay.classList.remove('hidden');
+    pauseControls.classList.add('hidden');
+    controlsToggleBtn.querySelector('.mode-name').textContent = 'Ver controles';
+    pauseOverlay.classList.remove('hidden');
   }
 }
 
@@ -969,11 +990,11 @@ function init() {
   if (challenge && challenge.modifiers.prefilledBlocks) seedFixedBlocks(board);
   score = 0;
   lines = 0;
-  level = 1;
+  level = startLevel;
   paused = false;
   gameOver = false;
   gameStarted = true;
-  dropInterval = 1000;
+  dropInterval = Math.max(100, 1000 - (level - 1) * 90);
   dropAccum = 0;
   pendingPowerUp = false;
   nextPowerUpAt = POWERUP_INTERVAL;
@@ -1000,6 +1021,8 @@ function init() {
   overlay.classList.add('hidden');
   menuOverlay.classList.add('hidden');
   skillOverlay.classList.add('hidden');
+  pauseOverlay.classList.add('hidden');
+  pauseControls.classList.add('hidden');
   cancelAnimationFrame(animId);
   animId = requestAnimationFrame(loop);
 }
@@ -1028,7 +1051,7 @@ document.addEventListener('keydown', e => {
     }
     return;
   }
-  if (e.code === 'KeyP') { togglePause(); return; }
+  if (e.code === 'KeyP' || e.code === 'Escape') { togglePause(); return; }
   if (paused || gameOver) return;
   if (e.code === 'KeyC') { openSkillSelection(); return; }
   switch (e.code) {
@@ -1069,3 +1092,10 @@ skillCancelBtn.addEventListener('click', cancelSkillSelection);
 
 restartBtn.addEventListener('click', () => startGame(currentChallengeId));
 menuBtn.addEventListener('click', showMenu);
+
+resumeBtn.addEventListener('click', () => { if (paused) togglePause(); });
+pauseRestartBtn.addEventListener('click', () => startGame(currentChallengeId));
+controlsToggleBtn.addEventListener('click', () => {
+  const nowHidden = pauseControls.classList.toggle('hidden');
+  controlsToggleBtn.querySelector('.mode-name').textContent = nowHidden ? 'Ver controles' : 'Ocultar controles';
+});
