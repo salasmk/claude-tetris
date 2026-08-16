@@ -48,8 +48,26 @@
         </div>
 
         <div class="panel-section">
+          <span class="label">ENERGÍA</span>
+          <div class="energy-bar" id="energy-bar">
+            <div class="energy-bar-fill" id="energy-fill"></div>
+          </div>
+          <span class="value small" id="energy-hint" hidden>C: activar habilidad</span>
+        </div>
+
+        <div class="panel-section" id="peek-section" hidden>
+          <span class="label">PRÓXIMAS 5</span>
+          <canvas id="peek-canvas" width="360" height="72"></canvas>
+        </div>
+
+        <div class="panel-section">
           <span class="label">NEXT</span>
           <canvas id="next-canvas" width="120" height="120"></canvas>
+        </div>
+
+        <div class="panel-section">
+          <span class="label">HOLD</span>
+          <canvas id="hold-canvas" width="120" height="120"></canvas>
         </div>
 
         <div class="panel-section controls">
@@ -60,6 +78,7 @@
             <li><kbd>↓</kbd> bajar</li>
             <li><kbd>Space</kbd> caída</li>
             <li><kbd>P</kbd> pausa</li>
+            <li><kbd>C</kbd> habilidad</li>
           </ul>
         </div>
       </aside>
@@ -71,6 +90,35 @@
         <p id="overlay-score"></p>
         <button id="restart-btn">Reiniciar</button>
         <button id="menu-btn" class="secondary-btn">Elegir modo</button>
+      </div>
+    </div>
+
+    <div id="skill-overlay" class="overlay hidden">
+      <div class="overlay-box menu-box">
+        <p class="menu-title">ELIGE UNA HABILIDAD</p>
+        <div class="mode-list">
+          <button class="mode-btn skill-btn" data-skill="peek">
+            <span class="mode-name">1 · Ver próximas 5</span>
+            <span class="mode-desc">Revela la cola de piezas durante 8s</span>
+          </button>
+          <button class="mode-btn skill-btn" data-skill="swap">
+            <span class="mode-name">2 · Intercambiar</span>
+            <span class="mode-desc">Cambia la pieza actual por otra del pool</span>
+          </button>
+          <button class="mode-btn skill-btn" data-skill="slow">
+            <span class="mode-name">3 · Ralentizar tiempo</span>
+            <span class="mode-desc">Reduce la velocidad de caída 10s</span>
+          </button>
+          <button class="mode-btn skill-btn" data-skill="undo">
+            <span class="mode-name">4 · Deshacer</span>
+            <span class="mode-desc">Revierte la última colocación</span>
+          </button>
+          <button class="mode-btn skill-btn" data-skill="hold">
+            <span class="mode-name">5 · Reservar pieza</span>
+            <span class="mode-desc">Guarda la pieza actual (hold)</span>
+          </button>
+        </div>
+        <button id="skill-cancel-btn" class="secondary-btn">Cancelar (Esc)</button>
       </div>
     </div>
 

@@ -44,30 +44,56 @@ const POWERUP_META = {
   freeze: { color: '#4fc3f7', icon: '❄' },
 };
 
+const NEXT_QUEUE_SIZE = 5;
+const SKILL_ENERGY_MAX = 100;
+const SKILL_ENERGY_PER_LINE = 20; // per line, natural clears only (mirrors trackCombo convention)
+const SKILL_PEEK_DURATION = 8000;
+const SKILL_SLOW_DURATION = 10000;
+const SKILL_SLOW_RATE = 0.5; // drop accumulates at half speed while active
+const SKILL_LABELS = {
+  peek: 'VISIÓN x5',
+  swap: 'INTERCAMBIO',
+  slow: 'TIEMPO LENTO',
+  undo: 'DESHECHO',
+  hold: 'RESERVA',
+};
+
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
 const nextCanvas = document.getElementById('next-canvas');
 const nextCtx = nextCanvas.getContext('2d');
+const holdCanvas = document.getElementById('hold-canvas');
+const holdCtx = holdCanvas.getContext('2d');
+const peekSection = document.getElementById('peek-section');
+const peekCanvas = document.getElementById('peek-canvas');
+const peekCtx = peekCanvas.getContext('2d');
 const scoreEl = document.getElementById('score');
 const linesEl = document.getElementById('lines');
 const levelEl = document.getElementById('level');
 const comboEl = document.getElementById('combo');
+const energyBar = document.getElementById('energy-bar');
+const energyFill = document.getElementById('energy-fill');
+const energyHint = document.getElementById('energy-hint');
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
 const menuBtn = document.getElementById('menu-btn');
 const menuOverlay = document.getElementById('menu-overlay');
-const modeButtons = document.querySelectorAll('.mode-btn');
+const modeButtons = document.querySelectorAll('.mode-btn[data-challenge]');
 const challengePanel = document.getElementById('challenge-panel');
 const challengeGoalEl = document.getElementById('challenge-goal');
 const challengeTimeEl = document.getElementById('challenge-time');
 const themeToggle = document.getElementById('theme-toggle');
+const skillOverlay = document.getElementById('skill-overlay');
+const skillButtons = document.querySelectorAll('.skill-btn');
+const skillCancelBtn = document.getElementById('skill-cancel-btn');
 
-let board, current, next, score, lines, level, paused, gameOver, gameStarted, lastTime, dropAccum, dropInterval, animId;
+let board, current, nextQueue, score, lines, level, paused, gameOver, gameStarted, lastTime, dropAccum, dropInterval, animId;
 let pendingPowerUp, nextPowerUpAt, frozenUntil;
 let combo, backToBackTetris, lastAction, comboEffect, audioCtx;
 let challenge, currentChallengeId;
+let skillEnergy, choosingSkill, holdPiece, peekUntil, slowUntil, lastLockSnapshot;
 
 // Challenge definitions: each entry describes a win condition (`goal`),
 // an optional overall countdown (`timeLimitMs`), and rule modifiers applied
@@ -165,6 +191,14 @@ function randomPiece() {
 function randomPowerUp() {
   const special = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
   return { type: 'powerup', special, shape: [[1]], x: Math.floor(COLS / 2), y: 0 };
+}
+
+function fillQueue() {
+  while (nextQueue.length < NEXT_QUEUE_SIZE) nextQueue.push(randomPiece());
+}
+
+function clonePiece(piece) {
+  return piece ? { ...piece, shape: piece.shape.map(row => [...row]) } : null;
 }
 
 function collide(shape, ox, oy) {
@@ -266,6 +300,7 @@ function addLinesCleared(count, opts = {}) {
       lineScore = Math.round(lineScore * B2B_MULTIPLIER);
     }
     backToBackTetris = isTetris;
+    skillEnergy = Math.min(SKILL_ENERGY_MAX, skillEnergy + count * SKILL_ENERGY_PER_LINE);
   }
   score += lineScore;
 
@@ -328,7 +363,38 @@ function softDrop() {
   }
 }
 
+function snapshotBeforeLock() {
+  return {
+    board: board.map(row => [...row]),
+    score, lines, level, combo, backToBackTetris,
+    pendingPowerUp, nextPowerUpAt,
+    current: clonePiece(current),
+    nextQueue: nextQueue.map(clonePiece),
+    holdPiece: clonePiece(holdPiece),
+  };
+}
+
+function restoreSnapshot(snap) {
+  board = snap.board.map(row => [...row]);
+  score = snap.score;
+  lines = snap.lines;
+  level = snap.level;
+  combo = snap.combo;
+  backToBackTetris = snap.backToBackTetris;
+  pendingPowerUp = snap.pendingPowerUp;
+  nextPowerUpAt = snap.nextPowerUpAt;
+  dropInterval = Math.max(100, 1000 - (level - 1) * 90);
+  current = clonePiece(snap.current);
+  nextQueue = snap.nextQueue.map(clonePiece);
+  holdPiece = clonePiece(snap.holdPiece);
+  gameOver = false;
+  drawNext();
+  drawHold();
+  updateHUD();
+}
+
 function lockPiece() {
+  lastLockSnapshot = snapshotBeforeLock();
   const tspin = isTSpin();
   if (current.special) {
     applyPowerUp(current);
@@ -499,8 +565,8 @@ function challengeFail(reason) {
 }
 
 function spawn() {
-  current = next;
-  next = randomPiece();
+  current = nextQueue.shift();
+  fillQueue();
   if (collide(current.shape, current.x, current.y)) {
     endGame();
   }
@@ -512,6 +578,11 @@ function updateHUD() {
   linesEl.textContent = lines;
   levelEl.textContent = level;
   comboEl.textContent = combo >= 2 ? `x${combo}` : '-';
+  const pct = Math.min(100, (skillEnergy / SKILL_ENERGY_MAX) * 100);
+  energyFill.style.width = `${pct}%`;
+  const ready = skillEnergy >= SKILL_ENERGY_MAX;
+  energyBar.classList.toggle('ready', ready);
+  energyHint.hidden = !ready;
 }
 
 function getAudioCtx() {
@@ -650,6 +721,7 @@ function draw() {
   }
 
   drawComboEffect();
+  updatePeekVisibility();
 }
 
 function drawComboEffect() {
@@ -683,16 +755,59 @@ function drawComboEffect() {
 function drawNext() {
   const NB = 30;
   nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
-  if (next.special) {
-    drawPowerUp(nextCtx, 1, 1, next.special, NB);
+  const upcoming = nextQueue[0];
+  if (upcoming.special) {
+    drawPowerUp(nextCtx, 1, 1, upcoming.special, NB);
     return;
   }
-  const shape = next.shape;
+  const shape = upcoming.shape;
   const offX = Math.floor((4 - shape[0].length) / 2);
   const offY = Math.floor((4 - shape.length) / 2);
   for (let r = 0; r < shape.length; r++)
     for (let c = 0; c < shape[r].length; c++)
       drawBlock(nextCtx, offX + c, offY + r, shape[r][c], NB);
+}
+
+function drawHold() {
+  const HB = 30;
+  holdCtx.clearRect(0, 0, holdCanvas.width, holdCanvas.height);
+  if (!holdPiece) return;
+  if (holdPiece.special) {
+    drawPowerUp(holdCtx, 1, 1, holdPiece.special, HB);
+    return;
+  }
+  const shape = holdPiece.shape;
+  const offX = Math.floor((4 - shape[0].length) / 2);
+  const offY = Math.floor((4 - shape.length) / 2);
+  for (let r = 0; r < shape.length; r++)
+    for (let c = 0; c < shape[r].length; c++)
+      drawBlock(holdCtx, offX + c, offY + r, shape[r][c], HB);
+}
+
+// Renders all 5 queued pieces in a single row; only shown while the "ver
+// próximas 5" skill is active (see updatePeekVisibility, called from draw()).
+function drawPeek() {
+  const PB = 18;
+  peekCtx.clearRect(0, 0, peekCanvas.width, peekCanvas.height);
+  nextQueue.forEach((piece, i) => {
+    const gx = i * 4;
+    if (piece.special) {
+      drawPowerUp(peekCtx, gx + 1, 1, piece.special, PB);
+      return;
+    }
+    const shape = piece.shape;
+    const offX = Math.floor((4 - shape[0].length) / 2);
+    const offY = Math.floor((4 - shape.length) / 2);
+    for (let r = 0; r < shape.length; r++)
+      for (let c = 0; c < shape[r].length; c++)
+        drawBlock(peekCtx, gx + offX + c, offY + r, shape[r][c], PB);
+  });
+}
+
+function updatePeekVisibility() {
+  const active = performance.now() < peekUntil;
+  peekSection.hidden = !active;
+  if (active) drawPeek();
 }
 
 function endGame() {
@@ -717,13 +832,109 @@ function togglePause() {
   }
 }
 
+function usePeek() {
+  peekUntil = performance.now() + SKILL_PEEK_DURATION;
+  return true;
+}
+
+function useSwapPool() {
+  if (current.special) return false;
+  const type = Math.floor(Math.random() * 8) + 1;
+  const shape = PIECES[type].map(row => [...row]);
+  if (!collide(shape, current.x, current.y)) {
+    current = { type, shape, x: current.x, y: current.y };
+    return true;
+  }
+  const cx = Math.floor(COLS / 2) - Math.floor(shape[0].length / 2);
+  if (!collide(shape, cx, current.y)) {
+    current = { type, shape, x: cx, y: current.y };
+    return true;
+  }
+  return false;
+}
+
+function useSlowTime() {
+  slowUntil = performance.now() + SKILL_SLOW_DURATION;
+  return true;
+}
+
+function useUndo() {
+  if (!lastLockSnapshot) return false;
+  restoreSnapshot(lastLockSnapshot);
+  lastLockSnapshot = null;
+  return true;
+}
+
+function useHold() {
+  if (current.special) return false;
+  if (holdPiece) {
+    const swapped = clonePiece(holdPiece);
+    const spawnX = Math.floor(COLS / 2) - Math.floor(swapped.shape[0].length / 2);
+    if (collide(swapped.shape, spawnX, 0)) return false;
+    holdPiece = { type: current.type, shape: PIECES[current.type].map(row => [...row]) };
+    current = { type: swapped.type, shape: swapped.shape, x: spawnX, y: 0 };
+  } else {
+    holdPiece = { type: current.type, shape: PIECES[current.type].map(row => [...row]) };
+    current = nextQueue.shift();
+    fillQueue();
+    if (collide(current.shape, current.x, current.y)) endGame();
+  }
+  drawHold();
+  drawNext();
+  return true;
+}
+
+function triggerSkillFeedback(skillKey) {
+  comboEffect = { lines: [SKILL_LABELS[skillKey] || 'HABILIDAD'], startedAt: performance.now(), duration: 1200 };
+  beep(520, 0.12, 0, 'triangle', 0.09);
+  beep(780, 0.14, 0.08, 'triangle', 0.09);
+}
+
+function openSkillSelection() {
+  if (skillEnergy < SKILL_ENERGY_MAX || choosingSkill || paused || gameOver) return;
+  choosingSkill = true;
+  cancelAnimationFrame(animId);
+  skillOverlay.classList.remove('hidden');
+}
+
+function cancelSkillSelection() {
+  if (!choosingSkill) return;
+  choosingSkill = false;
+  skillOverlay.classList.add('hidden');
+  lastTime = performance.now();
+  animId = requestAnimationFrame(loop);
+}
+
+function selectSkill(skillKey) {
+  if (!choosingSkill) return;
+  let success = false;
+  switch (skillKey) {
+    case 'peek': success = usePeek(); break;
+    case 'swap': success = useSwapPool(); break;
+    case 'slow': success = useSlowTime(); break;
+    case 'undo': success = useUndo(); break;
+    case 'hold': success = useHold(); break;
+  }
+  choosingSkill = false;
+  skillOverlay.classList.add('hidden');
+  if (success) {
+    skillEnergy = 0;
+    triggerSkillFeedback(skillKey);
+  }
+  updateHUD();
+  if (!gameOver) {
+    lastTime = performance.now();
+    animId = requestAnimationFrame(loop);
+  }
+}
+
 function loop(ts) {
   const dt = ts - lastTime;
   lastTime = ts;
   tickChallenge(dt);
   if (gameOver) { draw(); return; }
   if (ts >= frozenUntil) {
-    dropAccum += dt;
+    dropAccum += ts < slowUntil ? dt * SKILL_SLOW_RATE : dt;
     if (dropAccum >= dropInterval) {
       dropAccum = 0;
       if (!collide(current.shape, current.x, current.y + 1)) {
@@ -757,14 +968,23 @@ function init() {
   backToBackTetris = false;
   lastAction = null;
   comboEffect = null;
+  skillEnergy = 0;
+  choosingSkill = false;
+  holdPiece = null;
+  peekUntil = 0;
+  slowUntil = 0;
+  lastLockSnapshot = null;
   lastTime = performance.now();
-  next = randomPiece();
+  nextQueue = [];
+  fillQueue();
   spawn();
+  drawHold();
   updateHUD();
   challengePanel.hidden = !challenge;
   updateChallengeHUD();
   overlay.classList.add('hidden');
   menuOverlay.classList.add('hidden');
+  skillOverlay.classList.add('hidden');
   cancelAnimationFrame(animId);
   animId = requestAnimationFrame(loop);
 }
@@ -783,8 +1003,20 @@ function startGame(challengeId) {
 
 document.addEventListener('keydown', e => {
   if (!gameStarted) return;
+  if (choosingSkill) {
+    switch (e.code) {
+      case 'Digit1': selectSkill('peek'); break;
+      case 'Digit2': selectSkill('swap'); break;
+      case 'Digit3': selectSkill('slow'); break;
+      case 'Digit4': selectSkill('undo'); break;
+      case 'Digit5': selectSkill('hold'); break;
+      case 'Escape': cancelSkillSelection(); break;
+    }
+    return;
+  }
   if (e.code === 'KeyP') { togglePause(); return; }
   if (paused || gameOver) return;
+  if (e.code === 'KeyC') { openSkillSelection(); return; }
   switch (e.code) {
     case 'ArrowLeft':
       if (!collide(current.shape, current.x - 1, current.y)) { current.x--; lastAction = 'move'; }
@@ -810,6 +1042,12 @@ document.addEventListener('keydown', e => {
 modeButtons.forEach(btn => {
   btn.addEventListener('click', () => startGame(btn.dataset.challenge));
 });
+
+skillButtons.forEach(btn => {
+  btn.addEventListener('click', () => selectSkill(btn.dataset.skill));
+});
+
+skillCancelBtn.addEventListener('click', cancelSkillSelection);
 
 restartBtn.addEventListener('click', () => startGame(currentChallengeId));
 menuBtn.addEventListener('click', showMenu);
