@@ -55,7 +55,6 @@ const SKILL_LABELS = {
   swap: 'INTERCAMBIO',
   slow: 'TIEMPO LENTO',
   undo: 'DESHECHO',
-  hold: 'RESERVA',
 };
 
 const canvas = document.getElementById('board');
@@ -93,7 +92,7 @@ let board, current, nextQueue, score, lines, level, paused, gameOver, gameStarte
 let pendingPowerUp, nextPowerUpAt, frozenUntil;
 let combo, backToBackTetris, lastAction, comboEffect, audioCtx;
 let challenge, currentChallengeId;
-let skillEnergy, choosingSkill, holdPiece, peekUntil, slowUntil, lastLockSnapshot;
+let skillEnergy, choosingSkill, holdPiece, holdUsed, peekUntil, slowUntil, lastLockSnapshot;
 
 // Challenge definitions: each entry describes a win condition (`goal`),
 // an optional overall countdown (`timeLimitMs`), and rule modifiers applied
@@ -371,6 +370,7 @@ function snapshotBeforeLock() {
     current: clonePiece(current),
     nextQueue: nextQueue.map(clonePiece),
     holdPiece: clonePiece(holdPiece),
+    holdUsed,
   };
 }
 
@@ -387,6 +387,7 @@ function restoreSnapshot(snap) {
   current = clonePiece(snap.current);
   nextQueue = snap.nextQueue.map(clonePiece);
   holdPiece = clonePiece(snap.holdPiece);
+  holdUsed = snap.holdUsed;
   gameOver = false;
   drawNext();
   drawHold();
@@ -404,7 +405,9 @@ function lockPiece() {
     clearLines({ isTSpin: tspin });
   }
   lastAction = null;
+  holdUsed = false;
   spawn();
+  drawHold();
 }
 
 function applyPowerUp(piece) {
@@ -771,9 +774,11 @@ function drawNext() {
 function drawHold() {
   const HB = 30;
   holdCtx.clearRect(0, 0, holdCanvas.width, holdCanvas.height);
+  holdCanvas.classList.toggle('hold-used', holdUsed);
   if (!holdPiece) return;
+  const alpha = holdUsed ? 0.35 : 1;
   if (holdPiece.special) {
-    drawPowerUp(holdCtx, 1, 1, holdPiece.special, HB);
+    drawPowerUp(holdCtx, 1, 1, holdPiece.special, HB, alpha);
     return;
   }
   const shape = holdPiece.shape;
@@ -781,7 +786,7 @@ function drawHold() {
   const offY = Math.floor((4 - shape.length) / 2);
   for (let r = 0; r < shape.length; r++)
     for (let c = 0; c < shape[r].length; c++)
-      drawBlock(holdCtx, offX + c, offY + r, shape[r][c], HB);
+      drawBlock(holdCtx, offX + c, offY + r, shape[r][c], HB, alpha);
 }
 
 // Renders all 5 queued pieces in a single row; only shown while the "ver
@@ -865,20 +870,26 @@ function useUndo() {
   return true;
 }
 
-function useHold() {
-  if (current.special) return false;
+// Standard modern-Tetris hold: swaps the active piece into the hold slot,
+// respawning it at the standard spawn position/orientation (never the
+// rotation it had when stored). Usable at most once per piece — holdUsed is
+// cleared in lockPiece() once the current piece settles.
+function holdSwap() {
+  if (holdUsed || current.special) return false;
   if (holdPiece) {
     const swapped = clonePiece(holdPiece);
     const spawnX = Math.floor(COLS / 2) - Math.floor(swapped.shape[0].length / 2);
-    if (collide(swapped.shape, spawnX, 0)) return false;
     holdPiece = { type: current.type, shape: PIECES[current.type].map(row => [...row]) };
     current = { type: swapped.type, shape: swapped.shape, x: spawnX, y: 0 };
+    if (collide(current.shape, current.x, current.y)) endGame();
   } else {
     holdPiece = { type: current.type, shape: PIECES[current.type].map(row => [...row]) };
     current = nextQueue.shift();
     fillQueue();
     if (collide(current.shape, current.x, current.y)) endGame();
   }
+  lastAction = null;
+  holdUsed = true;
   drawHold();
   drawNext();
   return true;
@@ -913,7 +924,6 @@ function selectSkill(skillKey) {
     case 'swap': success = useSwapPool(); break;
     case 'slow': success = useSlowTime(); break;
     case 'undo': success = useUndo(); break;
-    case 'hold': success = useHold(); break;
   }
   choosingSkill = false;
   skillOverlay.classList.add('hidden');
@@ -971,6 +981,7 @@ function init() {
   skillEnergy = 0;
   choosingSkill = false;
   holdPiece = null;
+  holdUsed = false;
   peekUntil = 0;
   slowUntil = 0;
   lastLockSnapshot = null;
@@ -1009,7 +1020,6 @@ document.addEventListener('keydown', e => {
       case 'Digit2': selectSkill('swap'); break;
       case 'Digit3': selectSkill('slow'); break;
       case 'Digit4': selectSkill('undo'); break;
-      case 'Digit5': selectSkill('hold'); break;
       case 'Escape': cancelSkillSelection(); break;
     }
     return;
@@ -1034,6 +1044,10 @@ document.addEventListener('keydown', e => {
     case 'Space':
       e.preventDefault();
       hardDrop();
+      break;
+    case 'ShiftLeft':
+    case 'ShiftRight':
+      holdSwap();
       break;
   }
   updateHUD();

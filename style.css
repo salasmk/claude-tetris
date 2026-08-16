@@ -191,6 +191,11 @@ body {
   border: 1px solid var(--board-border);
   background: var(--board-bg);
   border-radius: 4px;
+  transition: opacity 0.15s;
+}
+
+#hold-canvas.hold-used {
+  opacity: 0.5;
 }
 
 /* ---- Barra de energía / habilidades ---- */
