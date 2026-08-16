@@ -56,11 +56,60 @@ const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
+const menuBtn = document.getElementById('menu-btn');
+const menuOverlay = document.getElementById('menu-overlay');
+const modeButtons = document.querySelectorAll('.mode-btn');
+const challengePanel = document.getElementById('challenge-panel');
+const challengeGoalEl = document.getElementById('challenge-goal');
+const challengeTimeEl = document.getElementById('challenge-time');
 const themeToggle = document.getElementById('theme-toggle');
 
-let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
+let board, current, next, score, lines, level, paused, gameOver, gameStarted, lastTime, dropAccum, dropInterval, animId;
 let pendingPowerUp, nextPowerUpAt, frozenUntil;
 let combo, backToBackTetris, lastAction, comboEffect, audioCtx;
+let challenge, currentChallengeId;
+
+// Challenge definitions: each entry describes a win condition (`goal`),
+// an optional overall countdown (`timeLimitMs`), and rule modifiers applied
+// at specific call sites (tryRotate, draw, loop) rather than replacing them.
+const CHALLENGES = {
+  lines40: {
+    id: 'lines40',
+    name: 'Contrarreloj',
+    description: 'Limpia 40 líneas en 2 minutos',
+    goal: { type: 'lines', target: 40 },
+    timeLimitMs: 120000,
+    modifiers: {},
+  },
+  garbage: {
+    id: 'garbage',
+    name: 'Supervivencia',
+    description: 'Sobrevive con basura subiendo desde abajo cada 10s',
+    goal: { type: 'survive', target: 90000 },
+    modifiers: { garbageIntervalMs: 10000 },
+  },
+  fixed: {
+    id: 'fixed',
+    name: 'Bloques fijos',
+    description: 'Limpia 15 líneas en un tablero con obstáculos pre-colocados',
+    goal: { type: 'lines', target: 15 },
+    modifiers: { prefilledBlocks: true },
+  },
+  invisible: {
+    id: 'invisible',
+    name: 'Piezas invisibles',
+    description: 'Limpia 20 líneas; las piezas se vuelven invisibles al tocar el suelo',
+    goal: { type: 'lines', target: 20 },
+    modifiers: { invisibleOnLand: true },
+  },
+  reverse: {
+    id: 'reverse',
+    name: 'Rotación inversa',
+    description: 'Limpia 30 líneas; la rotación se invierte desde el nivel 2',
+    goal: { type: 'lines', target: 30 },
+    modifiers: { reverseAtLevel: 2 },
+  },
+};
 
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -85,6 +134,22 @@ initTheme();
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+}
+
+// Seeds the bottom rows with fixed obstacle blocks (reusing the metallic
+// "Nut" color index) for the "Bloques fijos" challenge. Written as plain
+// board cells so collide()/draw()/clearLines() work unmodified.
+function seedFixedBlocks(b) {
+  const startRow = ROWS - 6;
+  for (let r = startRow; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (Math.random() < 0.35) b[r][c] = 8;
+    }
+  }
+  // Guard against accidentally pre-seeding an already-complete row.
+  for (let r = startRow; r < ROWS; r++) {
+    if (b[r].every(v => v !== 0)) b[r][Math.floor(Math.random() * COLS)] = 0;
+  }
 }
 
 function randomPiece() {
@@ -124,8 +189,18 @@ function rotateCW(shape) {
   return result;
 }
 
+function rotateCCW(shape) {
+  const rows = shape.length, cols = shape[0].length;
+  const result = Array.from({ length: cols }, () => new Array(rows).fill(0));
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++)
+      result[cols - 1 - c][r] = shape[r][c];
+  return result;
+}
+
 function tryRotate() {
-  const rotated = rotateCW(current.shape);
+  const reverse = challenge && challenge.modifiers.reverseAtLevel && level >= challenge.modifiers.reverseAtLevel;
+  const rotated = reverse ? rotateCCW(current.shape) : rotateCW(current.shape);
   const kicks = [0, -1, 1, -2, 2];
   for (const kick of kicks) {
     if (!collide(rotated, current.x + kick, current.y)) {
@@ -209,6 +284,12 @@ function addLinesCleared(count, opts = {}) {
 
   if (trackCombo) triggerComboFeedback({ combo, isTSpin, isTetris, isB2B, perfectClear });
   updateHUD();
+
+  if (challenge && challenge.goal.type === 'lines' && !gameOver) {
+    challenge.linesCleared += count;
+    updateChallengeHUD();
+    if (challenge.linesCleared >= challenge.goal.target) challengeSucceed();
+  }
 }
 
 function clearLines(opts = {}) {
@@ -321,6 +402,100 @@ function applyGravity() {
 
 function applyFreeze() {
   frozenUntil = lastTime + 5000;
+}
+
+// Inserts a garbage row from the bottom and shifts the rest of the board up
+// by one, mirroring merge()/clearLines() by writing plain cells into `board`
+// so collide() keeps being the single source of truth for the resulting
+// overlap/game-over check.
+function addGarbageRow() {
+  board.shift();
+  const row = new Array(COLS).fill(8);
+  row[Math.floor(Math.random() * COLS)] = 0;
+  board.push(row);
+  if (collide(current.shape, current.x, current.y)) {
+    challengeFail('¡La basura te alcanzó!');
+  }
+}
+
+function buildChallenge(id) {
+  const def = CHALLENGES[id];
+  if (!def) return null;
+  return {
+    ...def,
+    modifiers: { ...def.modifiers },
+    goal: { ...def.goal },
+    linesCleared: 0,
+    elapsedMs: 0,
+    garbageAccum: 0,
+  };
+}
+
+function formatTime(ms) {
+  const totalSec = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function updateChallengeHUD() {
+  if (!challenge) return;
+  if (challenge.goal.type === 'lines') {
+    challengeGoalEl.textContent = `${challenge.linesCleared}/${challenge.goal.target} líneas`;
+  } else if (challenge.goal.type === 'survive') {
+    challengeGoalEl.textContent = `Sobrevive ${formatTime(challenge.goal.target)}`;
+  }
+  if (challenge.timeLimitMs != null) {
+    challengeTimeEl.textContent = formatTime(challenge.timeLimitMs - challenge.elapsedMs);
+  } else if (challenge.goal.type === 'survive') {
+    challengeTimeEl.textContent = formatTime(challenge.goal.target - challenge.elapsedMs);
+  } else {
+    challengeTimeEl.textContent = '-';
+  }
+}
+
+// Ticked once per frame from loop() using the same ts delta that drives
+// dropAccum, rather than a second RAF loop.
+function tickChallenge(dt) {
+  if (!challenge || gameOver) return;
+  challenge.elapsedMs += dt;
+
+  if (challenge.modifiers.garbageIntervalMs) {
+    challenge.garbageAccum += dt;
+    if (challenge.garbageAccum >= challenge.modifiers.garbageIntervalMs) {
+      challenge.garbageAccum -= challenge.modifiers.garbageIntervalMs;
+      addGarbageRow();
+      if (gameOver) return;
+    }
+  }
+
+  if (challenge.timeLimitMs != null && challenge.elapsedMs >= challenge.timeLimitMs) {
+    challengeFail('¡Se acabó el tiempo!');
+    return;
+  }
+
+  if (challenge.goal.type === 'survive' && challenge.elapsedMs >= challenge.goal.target) {
+    challengeSucceed();
+    return;
+  }
+
+  updateChallengeHUD();
+}
+
+function challengeSucceed() {
+  gameOver = true;
+  cancelAnimationFrame(animId);
+  overlayTitle.textContent = '¡DESAFÍO SUPERADO!';
+  overlayScore.textContent = `Puntuación: ${score.toLocaleString()}`;
+  overlay.classList.remove('hidden');
+}
+
+function challengeFail(reason) {
+  gameOver = true;
+  cancelAnimationFrame(animId);
+  overlayTitle.textContent = 'DESAFÍO FALLIDO';
+  overlayScore.textContent = reason || `Puntuación: ${score.toLocaleString()}`;
+  overlay.classList.remove('hidden');
 }
 
 function spawn() {
@@ -453,21 +628,25 @@ function draw() {
     for (let c = 0; c < COLS; c++)
       drawBlock(ctx, c, r, board[r][c], BLOCK);
 
-  // ghost
+  // ghost + current piece — hidden once landed for the "piezas invisibles" challenge
   const gy = ghostY();
-  if (current.special) {
-    drawPowerUp(ctx, current.x, gy, current.special, BLOCK, 0.2);
-    drawPowerUp(ctx, current.x, current.y, current.special, BLOCK);
-  } else {
-    for (let r = 0; r < current.shape.length; r++)
-      for (let c = 0; c < current.shape[r].length; c++)
-        if (current.shape[r][c])
-          drawBlock(ctx, current.x + c, gy + r, current.shape[r][c], BLOCK, 0.2);
+  const landed = challenge && challenge.modifiers.invisibleOnLand &&
+    collide(current.shape, current.x, current.y + 1);
+  if (!landed) {
+    if (current.special) {
+      drawPowerUp(ctx, current.x, gy, current.special, BLOCK, 0.2);
+      drawPowerUp(ctx, current.x, current.y, current.special, BLOCK);
+    } else {
+      for (let r = 0; r < current.shape.length; r++)
+        for (let c = 0; c < current.shape[r].length; c++)
+          if (current.shape[r][c])
+            drawBlock(ctx, current.x + c, gy + r, current.shape[r][c], BLOCK, 0.2);
 
-    // current piece
-    for (let r = 0; r < current.shape.length; r++)
-      for (let c = 0; c < current.shape[r].length; c++)
-        drawBlock(ctx, current.x + c, current.y + r, current.shape[r][c], BLOCK);
+      // current piece
+      for (let r = 0; r < current.shape.length; r++)
+        for (let c = 0; c < current.shape[r].length; c++)
+          drawBlock(ctx, current.x + c, current.y + r, current.shape[r][c], BLOCK);
+    }
   }
 
   drawComboEffect();
@@ -519,7 +698,7 @@ function drawNext() {
 function endGame() {
   gameOver = true;
   cancelAnimationFrame(animId);
-  overlayTitle.textContent = 'GAME OVER';
+  overlayTitle.textContent = challenge ? 'DESAFÍO FALLIDO' : 'GAME OVER';
   overlayScore.textContent = `Puntuación: ${score.toLocaleString()}`;
   overlay.classList.remove('hidden');
 }
@@ -541,6 +720,8 @@ function togglePause() {
 function loop(ts) {
   const dt = ts - lastTime;
   lastTime = ts;
+  tickChallenge(dt);
+  if (gameOver) { draw(); return; }
   if (ts >= frozenUntil) {
     dropAccum += dt;
     if (dropAccum >= dropInterval) {
@@ -558,12 +739,15 @@ function loop(ts) {
 }
 
 function init() {
+  challenge = currentChallengeId ? buildChallenge(currentChallengeId) : null;
   board = createBoard();
+  if (challenge && challenge.modifiers.prefilledBlocks) seedFixedBlocks(board);
   score = 0;
   lines = 0;
   level = 1;
   paused = false;
   gameOver = false;
+  gameStarted = true;
   dropInterval = 1000;
   dropAccum = 0;
   pendingPowerUp = false;
@@ -577,12 +761,28 @@ function init() {
   next = randomPiece();
   spawn();
   updateHUD();
+  challengePanel.hidden = !challenge;
+  updateChallengeHUD();
   overlay.classList.add('hidden');
+  menuOverlay.classList.add('hidden');
   cancelAnimationFrame(animId);
   animId = requestAnimationFrame(loop);
 }
 
+function showMenu() {
+  cancelAnimationFrame(animId);
+  gameOver = true;
+  overlay.classList.add('hidden');
+  menuOverlay.classList.remove('hidden');
+}
+
+function startGame(challengeId) {
+  currentChallengeId = challengeId || null;
+  init();
+}
+
 document.addEventListener('keydown', e => {
+  if (!gameStarted) return;
   if (e.code === 'KeyP') { togglePause(); return; }
   if (paused || gameOver) return;
   switch (e.code) {
@@ -607,6 +807,9 @@ document.addEventListener('keydown', e => {
   updateHUD();
 });
 
-restartBtn.addEventListener('click', init);
+modeButtons.forEach(btn => {
+  btn.addEventListener('click', () => startGame(btn.dataset.challenge));
+});
 
-init();
+restartBtn.addEventListener('click', () => startGame(currentChallengeId));
+menuBtn.addEventListener('click', showMenu);
