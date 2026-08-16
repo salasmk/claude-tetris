@@ -346,6 +346,7 @@ function ghostY() {
 }
 
 function hardDrop() {
+  if (performance.now() < frozenUntil) return;
   const gy = ghostY();
   score += (gy - current.y) * 2;
   current.y = gy;
@@ -353,6 +354,7 @@ function hardDrop() {
 }
 
 function softDrop() {
+  if (performance.now() < frozenUntil) return;
   if (!collide(current.shape, current.x, current.y + 1)) {
     current.y++;
     score += 1;
@@ -438,6 +440,8 @@ function applyLightning(cx, cy) {
   }
   if (cx >= 0 && cx < COLS) {
     for (let r = 0; r < ROWS; r++) board[r][cx] = 0;
+    score += LINE_SCORES[1] * level;
+    updateHUD();
   }
 }
 
