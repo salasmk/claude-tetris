@@ -435,3 +435,149 @@ kbd {
   font-family: inherit;
   cursor: pointer;
 }
+
+/* ---- Récords ---- */
+.records-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--kbd-border);
+  width: 100%;
+}
+
+.records-section.hidden {
+  display: none;
+}
+
+.records-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--label-color);
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.records-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.records-item {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  background: var(--kbd-bg);
+  border: 1px solid var(--kbd-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.records-item::before {
+  counter-increment: rec;
+  content: counter(rec);
+  color: var(--label-color);
+  font-weight: 700;
+}
+
+.records-list {
+  counter-reset: rec;
+}
+
+.records-item .rec-name {
+  font-weight: 700;
+  color: var(--text-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.records-item .rec-score {
+  font-family: 'Courier New', Courier, monospace;
+  font-weight: 700;
+  color: var(--value-color);
+  justify-self: end;
+}
+
+.records-item .rec-meta {
+  grid-column: 2 / -1;
+  font-size: 10px;
+  color: var(--control-color);
+}
+
+.records-item.records-highlight {
+  border-color: #ffd54f;
+  box-shadow: 0 0 8px rgba(255, 213, 79, 0.4);
+}
+
+.records-empty {
+  font-size: 12px;
+  color: var(--control-color);
+  text-align: center;
+  padding: 8px 0;
+}
+
+.small-btn {
+  margin-top: 10px;
+  padding: 6px 16px;
+  font-size: 11px;
+}
+
+/* ---- Entrada de nombre para nuevo récord ---- */
+.record-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: var(--kbd-bg);
+  border: 1px solid #ffd54f;
+  border-radius: 8px;
+  padding: 10px 16px;
+}
+
+.record-entry.hidden {
+  display: none;
+}
+
+.record-entry-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffd54f;
+  letter-spacing: 0.5px;
+}
+
+.record-name-input {
+  background: var(--body-bg);
+  color: var(--text-color);
+  border: 1px solid var(--kbd-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  width: 160px;
+  text-align: center;
+}
+
+.record-name-input:focus {
+  outline: none;
+  border-color: var(--btn-bg);
+}
+
+#record-save-btn {
+  background: var(--btn-bg);
+  color: var(--btn-color);
+  border: none;
+  border-radius: 6px;
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: background 0.15s;
+}
+
+#record-save-btn:hover {
+  background: var(--btn-bg-hover);
+}

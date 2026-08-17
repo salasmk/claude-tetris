@@ -89,6 +89,15 @@
       <div class="overlay-box">
         <p id="overlay-title">GAME OVER</p>
         <p id="overlay-score"></p>
+        <div id="record-entry" class="record-entry hidden">
+          <p class="record-entry-label">¡Nueva puntuación en el TOP 5!</p>
+          <input type="text" id="record-name-input" class="record-name-input" maxlength="12" placeholder="Tu nombre" autocomplete="off" />
+          <button id="record-save-btn">Guardar récord</button>
+        </div>
+        <div id="overlay-records-section" class="records-section hidden">
+          <p class="records-title">TOP 5 RÉCORDS</p>
+          <ol id="overlay-records-list" class="records-list"></ol>
+        </div>
         <button id="restart-btn">Reiniciar</button>
         <button id="menu-btn" class="secondary-btn">Elegir modo</button>
       </div>
@@ -196,6 +205,11 @@
             <span class="mode-name">Rotación inversa</span>
             <span class="mode-desc">Limpia 30 líneas; la rotación se invierte desde el nivel 2</span>
           </button>
+        </div>
+        <div class="records-section">
+          <p class="records-title">TOP 5 RÉCORDS</p>
+          <ol id="menu-records-list" class="records-list"></ol>
+          <button id="reset-records-btn" class="secondary-btn small-btn">Resetear récords</button>
         </div>
       </div>
     </div>
